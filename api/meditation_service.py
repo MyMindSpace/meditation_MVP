@@ -6,8 +6,10 @@ from typing import Dict, Any, List, Optional
 import pandas as pd
 
 from fastapi import HTTPException
-from database.collections import save_session, update_session, get_user, create_user
+from database.api_collections import save_session, update_session, get_user, create_user
+from database.sync_collections import sync_create_user, sync_save_session, sync_update_session
 from Core_engine.meditation_selector import MeditationSelectorModule
+from api.constants import validate_meditation_recommendations, map_meditation_type_to_api
 import google.generativeai as genai
 
 class MeditationService:
@@ -60,41 +62,54 @@ class MeditationService:
             Dict with recommendations and session info
         """
         
-        # Create session
+        # Create session using sync version to avoid aiohttp issues
         session_id = str(uuid.uuid4())
-        await save_session({
-            'id': session_id,
-            'user_id': user_id,
-            'status': 'processing',
-            'input_type': 'text',
-            'input_data': {'diary_text': diary_text}
-        })
+        try:
+            sync_save_session({
+                'id': session_id,
+                'user_id': user_id,
+                'status': 'processing',
+                'input_type': 'text',
+                'input_data': {'diary_text': diary_text}
+            })
+        except Exception as e:
+            print(f"Warning: Could not save session to API: {e}")
+            # Continue without saving - the recommendation is the priority
         
         try:
             # Create temp files for meditation selector
             recommendations = await self._process_text_recommendations(diary_text, user_id)
             
+            # Validate and fix recommendations for API compatibility
+            validated_recommendations = validate_meditation_recommendations(recommendations)
+            
             # Update session with results
-            await update_session(session_id, {
-                'status': 'completed',
-                'results': {
-                    'recommendations': recommendations,
-                    'method': 'text_analysis'
-                }
-            })
+            try:
+                sync_update_session(session_id, {
+                    'status': 'completed',
+                    'results': {
+                        'recommendations': validated_recommendations,
+                        'method': 'text_analysis'
+                    }
+                })
+            except Exception as e:
+                print(f"Warning: Could not update session: {e}")
             
             return {
                 'session_id': session_id,
-                'recommendations': recommendations,
+                'recommendations': validated_recommendations,
                 'status': 'completed',
                 'method': 'text_analysis'
             }
             
         except Exception as e:
-            await update_session(session_id, {
-                'status': 'failed',
-                'error': str(e)
-            })
+            try:
+                sync_update_session(session_id, {
+                    'status': 'failed',
+                    'error': str(e)
+                })
+            except:
+                pass  # Don't fail on session update failure
             raise HTTPException(status_code=500, detail=f"Recommendation failed: {str(e)}")
     
     async def _process_text_recommendations(self, diary_text: str, user_id: str) -> List[Dict[str, Any]]:
@@ -158,7 +173,7 @@ class MeditationService:
         # Simple keyword matching
         if any(word in text_lower for word in ['anxious', 'anxiety', 'worry', 'nervous']):
             recommendations.append({
-                'meditation_type': 'Breathing Meditation',
+                'meditation_type': 'breathing',
                 'confidence': 0.85,
                 'rationale': 'Breathing meditation helps calm anxiety',
                 'source': 'keyword_fallback'
@@ -166,7 +181,7 @@ class MeditationService:
         
         if any(word in text_lower for word in ['stress', 'tension', 'overwhelmed']):
             recommendations.append({
-                'meditation_type': 'Body Scan Meditation',
+                'meditation_type': 'body_scan',
                 'confidence': 0.80,
                 'rationale': 'Body scan helps release physical tension',
                 'source': 'keyword_fallback'
@@ -174,7 +189,7 @@ class MeditationService:
         
         if any(word in text_lower for word in ['sleep', 'tired', 'insomnia', 'rest']):
             recommendations.append({
-                'meditation_type': 'Progressive Muscle Relaxation',
+                'meditation_type': 'movement',
                 'confidence': 0.75,
                 'rationale': 'Progressive relaxation aids sleep',
                 'source': 'keyword_fallback'
@@ -183,7 +198,7 @@ class MeditationService:
         # Default recommendation
         if not recommendations:
             recommendations.append({
-                'meditation_type': 'Mindfulness Meditation',
+                'meditation_type': 'mindfulness',
                 'confidence': 0.70,
                 'rationale': 'General mindfulness practice',
                 'source': 'default'

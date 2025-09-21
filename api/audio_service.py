@@ -6,8 +6,9 @@ from typing import Dict, Any, Optional
 import numpy as np
 
 from fastapi import UploadFile, HTTPException
-from database.collections import save_session, update_session
+from database.api_collections import save_session, update_session
 from Encoders.audio_encoder import AudioEncoder
+from api.constants import sanitize_audio_analysis_results
 # from preprocessing_unit.audio_preprocessor import AudioPreprocessor  # Skip for now
 
 class AudioService:
@@ -91,6 +92,8 @@ class AudioService:
             # Encode audio features
             try:
                 audio_results = self.audio_encoder.process_mfcc_file(mfcc_path)
+                # Sanitize results to remove API-incompatible fields
+                audio_results = sanitize_audio_analysis_results(audio_results)
             except Exception as e:
                 print(f"Error in encoding: {e}")
                 raise HTTPException(status_code=500, detail=f"Audio encoding failed: {str(e)}")

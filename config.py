@@ -13,17 +13,16 @@ class Config:
     LOGS_DIR = BASE_DIR / "logs"
     MEDITATION_CSV = BASE_DIR / "Core_engine" / "meditation.csv"
     
-    # Firebase
-    FIREBASE_CONFIG_PATH = BASE_DIR / "firebase_config.json"
-    FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
-    FIREBASE_STORAGE_BUCKET = os.getenv("FIREBASE_STORAGE_BUCKET", "")
+    # MeditationDB API Configuration
+    MEDITATIONDB_API_URL = os.getenv("MEDITATIONDB_API_URL", "https://meditationdb-api-222233295505.asia-south1.run.app")
+    MEDITATIONDB_API_TIMEOUT = int(os.getenv("MEDITATIONDB_API_TIMEOUT", "30"))
     
-    # Firebase Collections
+    # API Collections (for reference - handled by API client)
     USERS_COLLECTION = "users"
-    SESSIONS_COLLECTION = "sessions"
+    SESSIONS_COLLECTION = "sessions" 
     VECTORS_COLLECTION = "vectors"
     FEEDBACK_COLLECTION = "feedback"
-    HISTORY_COLLECTION = "meditation_history"
+    HISTORY_COLLECTION = "history"
     
     # Vector similarity
     EMBEDDING_MODEL = "all-MiniLM-L6-v2"

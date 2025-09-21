@@ -5,9 +5,9 @@ from datetime import datetime
 import hashlib
 
 from fastapi import HTTPException
-from database.collections import (
-    get_collection, save_document, query_documents, 
-    get_user, get_session, get_feedback_for_user
+from database.api_collections import (
+    save_document, query_documents, 
+    get_user, get_session, get_user_feedback
 )
 
 class VectorService:
@@ -34,7 +34,7 @@ class VectorService:
             raise HTTPException(status_code=404, detail="User not found")
         
         # Get user's feedback history
-        feedback_data = await get_feedback_for_user(user_id)
+        feedback_data = await get_user_feedback(user_id)
         
         # Get user's recent sessions
         sessions_data = await query_documents('sessions', 

@@ -261,3 +261,134 @@ class ErrorResponse(BaseModel):
                 "detail": "diary_text field is required"
             }
         }
+
+# ==================== MEDITATIONDB API MODELS ====================
+
+class APIUserPreferences(BaseModel):
+    """User preferences model aligned with MeditationDB API"""
+    experience_level: str = Field(default="beginner", description="User experience level", pattern="^(beginner|intermediate|advanced)$")
+    preferred_duration: int = Field(default=10, description="Preferred session duration in minutes")
+    favorite_meditations: List[str] = Field(default_factory=list, description="Favorite meditation types")
+    goals: List[str] = Field(default_factory=list, description="User meditation goals - must be from allowed values")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "experience_level": "beginner",
+                "preferred_duration": 15,
+                "favorite_meditations": ["mindfulness", "breathing"],
+                "goals": ["stress_reduction", "better_sleep"]
+            }
+        }
+
+class APIUserCreate(BaseModel):
+    """User creation model for MeditationDB API"""
+    name: str = Field(..., description="User's full name")
+    email: str = Field(..., description="User's email address")
+    preferences: APIUserPreferences = Field(default_factory=APIUserPreferences, description="User preferences")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "name": "John Doe",
+                "email": "john@example.com",
+                "preferences": {
+                    "experience_level": "beginner",
+                    "preferred_duration": 15,
+                    "favorite_meditations": ["mindfulness"],
+                    "goals": ["stress_relief"]
+                }
+            }
+        }
+
+class APISessionCreate(BaseModel):
+    """Session creation model for MeditationDB API - only required fields"""
+    user_id: str = Field(..., description="User ID")
+    input_type: str = Field(..., description="Type of input (audio/text)")
+    input_data: Dict[str, Any] = Field(default_factory=dict, description="Input data")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "user-123",
+                "input_type": "text",
+                "input_data": {"diary_text": "Feeling stressed about work"}
+            }
+        }
+
+class APIFeedbackCreate(BaseModel):
+    """Feedback creation model for MeditationDB API - minimal required fields only"""
+    user_id: str = Field(..., description="User ID")
+    session_id: str = Field(..., description="Session ID")
+    meditation_type: str = Field(..., description="Type of meditation (required)")
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1-5")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "user-123",
+                "session_id": "session-456",
+                "meditation_type": "mindfulness",
+                "rating": 4
+            }
+        }
+
+class APIVectorCreate(BaseModel):
+    """Vector creation model for MeditationDB API"""
+    entity_id: str = Field(..., description="ID of related entity")
+    entity_type: str = Field(..., description="Type of entity (user/session/meditation/audio)")
+    embedding: List[float] = Field(..., description="384-dimensional embedding vector")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Vector metadata")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "entity_id": "user-123",
+                "entity_type": "user",
+                "embedding": [0.1, 0.2, 0.3],  # truncated for example
+                "metadata": {
+                    "dimension": 384,
+                    "version": "1.0"
+                }
+            }
+        }
+
+class APIHistoryCreate(BaseModel):
+    """History entry creation model for MeditationDB API"""
+    user_id: str = Field(..., description="User ID")
+    session_id: str = Field(..., description="Session ID")
+    meditation_type: str = Field(..., description="Type of meditation")
+    duration: int = Field(..., description="Duration in minutes")
+    rating: int = Field(..., ge=1, le=5, description="Session rating")
+    notes: str = Field(default="", description="Additional notes")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": "user-123",
+                "session_id": "session-456",
+                "meditation_type": "mindfulness",
+                "duration": 15,
+                "rating": 4,
+                "notes": "Felt more relaxed after the session",
+                "metadata": {"environment": "quiet_room"}
+            }
+        }
+
+class APIResponse(BaseModel):
+    """Standard API response wrapper"""
+    success: bool = Field(..., description="Whether the operation was successful")
+    message: str = Field(..., description="Response message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Response data")
+    timestamp: datetime = Field(default_factory=datetime.now, description="Response timestamp")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Operation completed successfully",
+                "data": {"id": "12345"},
+                "timestamp": "2024-01-01T10:00:00Z"
+            }
+        }

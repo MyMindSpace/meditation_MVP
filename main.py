@@ -23,11 +23,11 @@ from api.audio_service import audio_service
 from api.vector_service import vector_service
 
 # Import database operations
-from database.collections import (
+from database.api_collections import (
     create_user, get_user, update_user_preferences,
-    save_feedback, get_user_stats, get_system_stats
+    save_feedback, get_user_analytics, get_overall_analytics,
+    test_api_connection, close_connections
 )
-from database.firebase_client import initialize_firebase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,9 +40,12 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Meditation API...")
     
     try:
-        # Initialize Firebase
-        initialize_firebase()
-        logger.info("Firebase initialized successfully")
+        # Test API connection
+        connected = await test_api_connection()
+        if connected:
+            logger.info("MeditationDB API connection successful")
+        else:
+            logger.warning("Failed to connect to MeditationDB API")
         
         # Initialize meditation embeddings on startup
         try:
@@ -61,6 +64,11 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down Meditation API...")
+    try:
+        await close_connections()
+        logger.info("API connections closed successfully")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -120,8 +128,8 @@ async def health_check():
 async def detailed_health():
     """Detailed health check with system info"""
     try:
-        # Test Firebase connection
-        stats = await get_system_stats()
+        # Test API connection
+        stats = await get_overall_analytics()
         
         return HealthResponse(
             status="healthy",
@@ -135,7 +143,7 @@ async def detailed_health():
 async def system_stats():
     """Get system statistics"""
     try:
-        return await get_system_stats()
+        return await get_overall_analytics()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
 
@@ -186,7 +194,7 @@ async def update_preferences(user_id: str, preferences: dict):
 async def get_user_statistics(user_id: str):
     """Get user statistics and analytics"""
     try:
-        return await get_user_stats(user_id)
+        return await get_user_analytics(user_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get user stats: {str(e)}")
 
