@@ -146,7 +146,6 @@ async def query_documents(
         if collection_name == 'users':
             return await api_client.get_users(limit=limit)
         elif collection_name == 'sessions':
-            # Check if filtering by status
             status_filter = None
             if filters:
                 for field, operator, value in filters:
@@ -154,6 +153,23 @@ async def query_documents(
                         status_filter = value
                         break
             return await api_client.get_sessions(status=status_filter, limit=limit)
+        elif collection_name == 'vectors':
+            # Extract entity_id and entity_type from filters
+            entity_id = None
+            entity_type = None
+            if filters:
+                for field, operator, value in filters:
+                    if field == 'entity_id' and operator == '==':
+                        entity_id = value
+                    elif field == 'entity_type' and operator == '==':
+                        entity_type = value
+            if entity_id:
+                return await api_client.get_vectors_by_entity_id(entity_id, entity_type, limit=limit)
+            elif entity_type:
+                return await api_client.get_vectors_by_entity_type(entity_type, limit=limit)
+            else:
+                result = await api_client._make_request("GET", "/vectors", params={"limit": limit})
+                return result if isinstance(result, list) else (result.get("data", []) if result else [])
         else:
             raise ValueError(f"Unsupported collection: {collection_name}")
     except Exception as e:
@@ -382,11 +398,11 @@ async def save_meditation_history(history_data: Dict[str, Any]) -> str:
         'user_id': history_data.get('user_id'),
         'session_id': history_data.get('session_id'),
         'meditation_type': history_data.get('meditation_type'),
-        'duration': history_data.get('duration'),
-        'rating': history_data.get('rating'),
+        'duration_planned': history_data.get('duration_planned') or history_data.get('duration') or 10,
+        'confidence_score': history_data.get('confidence_score', 0.5),
+        'recommendation_source': history_data.get('recommendation_source', 'ai_recommendation'),
+        'success_rating': history_data.get('success_rating') or history_data.get('rating'),
         'notes': history_data.get('notes', ''),
-        'completed_at': history_data.get('completed_at'),
-        'metadata': history_data.get('metadata', {})
     }
     
     created_id = await api_client.create_history_entry(history_doc)

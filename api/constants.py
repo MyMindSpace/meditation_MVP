@@ -227,57 +227,73 @@ def validate_meditation_recommendations(recommendations: list) -> list:
     
     return validated
 
+VALID_EMOTION_LABELS = {
+    'happy', 'sad', 'angry', 'fearful', 'disgusted',
+    'surprised', 'neutral', 'calm', 'excited', 'stressed'
+}
+
 def sanitize_audio_analysis_results(audio_results: dict) -> dict:
     """
-    Remove fields from audio analysis results that are not allowed by the API
-    
-    The API has strict validation and doesn't accept complex nested feature structures.
-    This function creates a simplified version with only basic fields.
-    
-    Args:
-        audio_results: Raw audio analysis results
-        
-    Returns:
-        Sanitized results with only allowed fields
+    Reshape raw encoder output into the exact structure the MeditationDB API accepts.
+
+    Allowed schema:
+      audio_analysis:
+        features:
+          emotion: { label: str, probs: [0-1, ...] }
+          vad:     { speech_ratio: 0-1, segment_count: int }
+          mfcc:    object (optional)
+        embeddings:
+          emotion: [numbers]
+          audio:   [numbers] length exactly 384 — omitted if wrong size
     """
     if not isinstance(audio_results, dict):
         return {}
-    
-    # Create a simplified structure that the API will accept
+
     sanitized = {}
-    
-    # Keep basic fields
-    if 'file' in audio_results:
-        sanitized['file'] = audio_results['file']
-    
-    if 'audio_embedding' in audio_results:
-        # Keep embedding but limit size to prevent payload issues
-        embedding = audio_results['audio_embedding']
-        if isinstance(embedding, list) and len(embedding) > 100:
-            # Truncate very large embeddings
-            sanitized['audio_embedding'] = embedding[:100]
-        else:
-            sanitized['audio_embedding'] = embedding
-    
-    # Extract key metrics from nested features into flat structure
-    features = audio_results.get('features', {})
-    
-    # Extract emotion info
-    if 'emotion' in features:
-        emotion = features['emotion']
-        if isinstance(emotion, dict):
-            sanitized['emotion_label'] = emotion.get('label', 'neutral')
-            if 'probs' in emotion and isinstance(emotion['probs'], list):
-                sanitized['emotion_confidence'] = max(emotion['probs']) if emotion['probs'] else 0.0
-    
-    # Extract basic VAD info without complex nested structure
-    if 'vad' in features:
-        vad = features['vad']
-        if isinstance(vad, dict):
-            sanitized['speech_ratio'] = vad.get('speech_ratio', 0.0)
-            sanitized['segment_count'] = vad.get('segment_count', 0)
-    
-    # Add processing status
-    sanitized['processing_status'] = 'completed'
-    
+
+    # --- features ---
+    raw_features = audio_results.get('features', {})
+    features = {}
+
+    raw_emotion = raw_features.get('emotion', {})
+    if isinstance(raw_emotion, dict):
+        label = raw_emotion.get('label', 'neutral')
+        if label not in VALID_EMOTION_LABELS:
+            label = 'neutral'
+        probs = raw_emotion.get('probs', [])
+        if isinstance(probs, list) and probs:
+            features['emotion'] = {'label': label, 'probs': probs}
+
+    # vad — only speech_ratio and segment_count allowed (no extra fields)
+    raw_vad = raw_features.get('vad', {})
+    if isinstance(raw_vad, dict):
+        features['vad'] = {
+            'speech_ratio': max(0.0, min(1.0, float(raw_vad.get('speech_ratio', 0.0)))),
+            'segment_count': max(0, int(raw_vad.get('segment_count', 0))),
+        }
+
+    if features:
+        sanitized['features'] = features
+
+    # --- embeddings ---
+    raw_embeddings = audio_results.get('embeddings', {})
+    if isinstance(raw_embeddings, dict):
+        embeddings = {}
+
+        audio_vec = raw_embeddings.get('audio', [])
+        if isinstance(audio_vec, list) and audio_vec:
+            # Schema requires exactly 384 dimensions — pad with zeros if shorter
+            if len(audio_vec) < 384:
+                audio_vec = audio_vec + [0.0] * (384 - len(audio_vec))
+            elif len(audio_vec) > 384:
+                audio_vec = audio_vec[:384]
+            embeddings['audio'] = audio_vec
+
+        emotion_vec = raw_embeddings.get('emotion', [])
+        if isinstance(emotion_vec, list) and emotion_vec:
+            embeddings['emotion'] = emotion_vec
+
+        if embeddings:
+            sanitized['embeddings'] = embeddings
+
     return sanitized

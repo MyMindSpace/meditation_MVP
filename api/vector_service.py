@@ -55,11 +55,9 @@ class VectorService:
             'entity_type': 'user',
             'embedding': user_embedding.tolist(),
             'metadata': {
-                'preferences': user_data.get('preferences', {}),
                 'success_rate': success_rate,
                 'session_count': len(sessions_data),
-                'feedback_count': len(feedback_data),
-                'last_updated': datetime.utcnow().isoformat()
+                'avg_rating': self._calculate_avg_rating(feedback_data)
             }
         }
         
@@ -96,10 +94,8 @@ class VectorService:
             'entity_type': 'session',
             'embedding': session_embedding.tolist(),
             'metadata': {
-                'user_id': session_data.get('user_id'),
-                'input_type': session_data.get('input_type'),
-                'recommendations': session_data.get('results', {}).get('recommendations', []),
-                'created_at': session_data.get('created_at')
+                'dimension': 384,
+                'version': '1.0'
             }
         }
         
@@ -129,9 +125,8 @@ class VectorService:
                 'entity_type': 'meditation',
                 'embedding': meditation_embedding.tolist(),
                 'metadata': {
-                    'name': meditation_type,
-                    'description': description,
-                    'category': self._get_meditation_category(meditation_type)
+                    'dimension': 384,
+                    'version': '1.0'
                 }
             }
             
@@ -515,6 +510,13 @@ class VectorService:
             return embedding / norm
         return embedding
     
+    def _calculate_avg_rating(self, feedback_data: List[Dict]) -> float:
+        """Calculate average rating from feedback"""
+        if not feedback_data:
+            return 0.0
+        ratings = [f.get('rating', 0) for f in feedback_data if f.get('rating') is not None]
+        return sum(ratings) / len(ratings) if ratings else 0.0
+
     def _calculate_user_success_rate(self, feedback_data: List[Dict]) -> float:
         """Calculate user success rate from feedback"""
         if not feedback_data:
@@ -524,31 +526,25 @@ class VectorService:
         return high_ratings / len(feedback_data)
     
     def _get_meditation_types(self) -> Dict[str, str]:
-        """Get meditation types and descriptions"""
+        """Get meditation types using valid API enum values as keys."""
         return {
-            'Mindfulness Meditation': 'Focus on present moment awareness',
-            'Body Scan Meditation': 'Systematically scan your body for tension',
-            'Breathing Meditation': 'Focus on natural breathing rhythm',
-            'Loving-Kindness Meditation': 'Cultivate feelings of love and compassion',
-            'Progressive Muscle Relaxation': 'Tense and release muscle groups',
-            'Zen Meditation': 'Seated meditation with focus on breath',
-            'Walking Meditation': 'Mindful walking practice',
-            'Visualization Meditation': 'Guided imagery and mental visualization'
+            'mindfulness': 'Focus on present moment awareness',
+            'body_scan': 'Systematically scan your body for tension',
+            'breathing': 'Focus on natural breathing rhythm',
+            'loving_kindness': 'Cultivate feelings of love and compassion',
+            'zen': 'Seated meditation with focus on breath',
+            'walking': 'Mindful walking practice',
+            'guided_imagery': 'Guided imagery and mental visualization',
+            'vipassana': 'Insight meditation observing sensations',
+            'transcendental': 'Mantra-based transcendental practice',
+            'movement': 'Mindful movement and body awareness',
+            'sound_bath': 'Healing through sound vibrations',
+            'mantra': 'Repetition of sacred sounds or phrases',
         }
-    
+
     def _get_meditation_category(self, meditation_type: str) -> str:
-        """Get category for meditation type"""
-        categories = {
-            'Mindfulness Meditation': 'mindfulness',
-            'Body Scan Meditation': 'body_awareness', 
-            'Breathing Meditation': 'breath_focus',
-            'Loving-Kindness Meditation': 'compassion',
-            'Progressive Muscle Relaxation': 'relaxation',
-            'Zen Meditation': 'traditional',
-            'Walking Meditation': 'movement',
-            'Visualization Meditation': 'guided'
-        }
-        return categories.get(meditation_type, 'general')
+        """meditation_type is already a valid API enum — category is unused in metadata."""
+        return meditation_type
 
 # Global service instance
 vector_service = VectorService()

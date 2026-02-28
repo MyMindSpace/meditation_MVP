@@ -128,7 +128,7 @@ Format as spoken text that will be read aloud by a TTS system."""
             print("Calling Gemini API...")
             
             # Generate the guided meditation script using the LLM
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            model = genai.GenerativeModel('gemini-flash-latest')
             response = model.generate_content(prompt)
             generated_script = response.text
             

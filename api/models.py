@@ -189,8 +189,8 @@ class SessionResultsResponse(BaseModel):
                 "status": "completed",
                 "results": {
                     "audio_analysis": {
-                        "features": {...},
-                        "embeddings": {...}
+                        "features": {},
+                        "embeddings": {}
                     }
                 },
                 "audio_url": "https://storage.googleapis.com/bucket/audio/session_456.wav"

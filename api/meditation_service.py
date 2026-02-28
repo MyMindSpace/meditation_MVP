@@ -1,9 +1,12 @@
 ﻿import json
+import logging
 import tempfile
 import uuid
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from fastapi import HTTPException
 from database.api_collections import save_session, update_session, get_user, create_user
@@ -11,7 +14,7 @@ from database.sync_collections import sync_create_user, sync_save_session, sync_
 from Core_engine.meditation_selector import MeditationSelectorModule
 from api.constants import validate_meditation_recommendations, map_meditation_type_to_api
 import google.generativeai as genai
-
+import os
 class MeditationService:
     """Core meditation recommendation and script generation service"""
     
@@ -21,11 +24,16 @@ class MeditationService:
         
         # Configure Gemini API for script generation
         try:
-            genai.configure(api_key="AIzaSyBkhEgCoFQU8IAeIhHanSff76tdnGXJwu4")  # Replace with env var
-            self.gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY environment variable is not set")
+            genai.configure(api_key=api_key)
+            self.gemini_model = genai.GenerativeModel('gemini-flash-latest')
             self.has_gemini = True
-        except:
+            logger.info("Gemini model initialised: gemini-flash-latest")
+        except Exception as e:
             self.has_gemini = False
+            logger.warning(f"Gemini unavailable — script generation will use fallback template. Reason: {e}")
     
     def _load_meditation_data(self) -> pd.DataFrame:
         """Load meditation types from CSV"""
@@ -63,15 +71,17 @@ class MeditationService:
         """
         
         # Create session using sync version to avoid aiohttp issues
-        session_id = str(uuid.uuid4())
+        local_id = str(uuid.uuid4())
+        session_id = local_id
         try:
-            sync_save_session({
-                'id': session_id,
+            api_session_id = sync_save_session({
+                'id': local_id,
                 'user_id': user_id,
                 'status': 'processing',
                 'input_type': 'text',
                 'input_data': {'diary_text': diary_text}
             })
+            session_id = api_session_id or local_id
         except Exception as e:
             print(f"Warning: Could not save session to API: {e}")
             # Continue without saving - the recommendation is the priority
@@ -89,7 +99,7 @@ class MeditationService:
                     'status': 'completed',
                     'results': {
                         'recommendations': validated_recommendations,
-                        'method': 'text_analysis'
+                        'method': 'text_processing'
                     }
                 })
             except Exception as e:
@@ -226,12 +236,12 @@ class MeditationService:
         else:
             instructions = meditation_row.iloc[0]['Instructions']
         
-        # Generate script
-        if self.has_gemini:
-            script = await self._generate_script_with_gemini(meditation_type, instructions, duration_minutes)
-        else:
-            script = self._generate_fallback_script(meditation_type, instructions, duration_minutes)
-        
+        # Require Gemini — no fallback
+        if not self.has_gemini:
+            raise HTTPException(status_code=503, detail="Script generation unavailable: Gemini API is not configured")
+
+        script = await self._generate_script_with_gemini(meditation_type, instructions, duration_minutes)
+
         return {
             'meditation_type': meditation_type,
             'instructions': instructions,
@@ -239,10 +249,10 @@ class MeditationService:
             'duration_minutes': f"{duration_minutes-1}-{duration_minutes+1}",
             'format': 'TTS-ready'
         }
-    
+
     async def _generate_script_with_gemini(self, meditation_type: str, instructions: str, duration: int) -> str:
         """Generate script using Gemini API"""
-        
+
         prompt = f"""Generate a {duration}-minute guided meditation script.
 Meditation Type: {meditation_type}
 Instructions: {instructions}
@@ -255,54 +265,9 @@ Requirements:
 - Approximately {duration} minutes when spoken
 
 Format as spoken text for TTS system."""
-        
-        try:
-            response = self.gemini_model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            return self._generate_fallback_script(meditation_type, instructions, duration)
-    
-    def _generate_fallback_script(self, meditation_type: str, instructions: str, duration: int) -> str:
-        """Generate fallback script template"""
-        
-        return f"""Welcome to your {meditation_type} practice. [pause]
 
-Find a comfortable position, either sitting or lying down. [pause]
-
-Close your eyes gently and take three deep, calming breaths. [pause]
-
-{instructions} [pause]
-
-Allow yourself to settle into this moment. [pause]
-
-Focus on your breathing... in... [pause] and out... [pause]
-
-If your mind wanders, gently bring your attention back. [pause]
-
-Continue for the next few minutes, staying present with your practice. [pause]
-
-{self._get_type_specific_guidance(meditation_type)}
-
-As we complete this session, take one final deep breath. [pause]
-
-Slowly wiggle your fingers and toes. [pause]
-
-When you're ready, gently open your eyes and return to your day. [pause]
-
-Thank you for taking this time for yourself."""
-    
-    def _get_type_specific_guidance(self, meditation_type: str) -> str:
-        """Get specific guidance based on meditation type"""
-        
-        guidance_map = {
-            'Mindfulness Meditation': 'Notice whatever arises in your awareness without judgment. [pause]',
-            'Body Scan Meditation': 'Scan through your body from head to toe, noticing any sensations. [pause]',
-            'Breathing Meditation': 'Keep your attention on the sensation of breathing. [pause]',
-            'Loving-Kindness Meditation': 'Send thoughts of love and compassion to yourself and others. [pause]',
-            'Progressive Muscle Relaxation': 'Tense and release each muscle group, feeling the relaxation. [pause]'
-        }
-        
-        return guidance_map.get(meditation_type, 'Continue with your practice. [pause]')
+        response = self.gemini_model.generate_content(prompt)
+        return response.text
     
     async def get_enhanced_recommendations(self, diary_text: str, audio_analysis: Dict[str, Any], user_id: str) -> Dict[str, Any]:
         """

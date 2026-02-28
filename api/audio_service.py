@@ -35,14 +35,14 @@ class AudioService:
         
         # Create session if not provided
         if not session_id:
-            session_id = str(uuid.uuid4())
-            await save_session({
-                'id': session_id,
+            local_id = str(uuid.uuid4())
+            api_session_id = await save_session({
+                'id': local_id,
                 'user_id': user_id,
                 'status': 'processing',
                 'input_type': 'audio',
-                'created_at': None  # Firebase will auto-timestamp
             })
+            session_id = api_session_id or local_id
         
         try:
             # Validate file
@@ -101,14 +101,9 @@ class AudioService:
             # Update session with results
             await update_session(session_id, {
                 'status': 'completed',
-                'input_data': {
-                    'filename': file.filename,
-                    'file_size': len(file_content),
-                    'content_type': file.content_type
-                },
                 'results': {
                     'audio_analysis': audio_results,
-                    'processed_at': None  # Firebase timestamp
+                    'method': 'audio_processing',
                 }
             })
             
@@ -239,7 +234,7 @@ class AudioService:
     
     async def get_session_status(self, session_id: str) -> Dict[str, Any]:
         """Get processing status for a session"""
-        from database.collections import get_session
+        from database.api_collections import get_session
         
         session = await get_session(session_id)
         if not session:
@@ -254,7 +249,7 @@ class AudioService:
     
     async def get_session_results(self, session_id: str) -> Dict[str, Any]:
         """Get results for a completed session"""
-        from database.collections import get_session
+        from database.api_collections import get_session
         
         session = await get_session(session_id)
         if not session:

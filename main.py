@@ -6,6 +6,9 @@ import uvicorn
 from datetime import datetime
 import logging
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Import API models
 from api.models import (
@@ -25,9 +28,10 @@ from api.vector_service import vector_service
 # Import database operations
 from database.api_collections import (
     create_user, get_user, update_user_preferences,
-    save_feedback, get_user_analytics, get_overall_analytics,
+    save_feedback, get_overall_analytics,
     test_api_connection, close_connections
 )
+from database.api_client import ExternalServiceError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -101,8 +105,24 @@ async def http_exception_handler(request, exc):
         }
     )
 
+@app.exception_handler(ExternalServiceError)
+async def external_service_exception_handler(request, exc: ExternalServiceError):
+    logger.error(f"External service error ({exc.status_code}): {exc}")
+    # Surface 503/502/504 as-is; map other upstream errors to 502
+    client_status = exc.status_code if exc.status_code in (502, 503, 504) else 502
+    return JSONResponse(
+        status_code=client_status,
+        content={
+            "error": "external_service_error",
+            "message": "The meditation database service is temporarily unavailable. Please try again shortly.",
+            "detail": str(exc) if os.getenv("DEBUG") else None
+        }
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
+    if isinstance(exc, ExternalServiceError):
+        return await external_service_exception_handler(request, exc)
     logger.error(f"Unhandled error: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
@@ -123,21 +143,6 @@ async def health_check():
         timestamp=datetime.utcnow(),
         version="1.0.0"
     )
-
-@app.get("/health", response_model=HealthResponse, tags=["Health"])
-async def detailed_health():
-    """Detailed health check with system info"""
-    try:
-        # Test API connection
-        stats = await get_overall_analytics()
-        
-        return HealthResponse(
-            status="healthy",
-            timestamp=datetime.utcnow(),
-            version="1.0.0"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Service unhealthy: {str(e)}")
 
 @app.get("/stats", tags=["Health"])
 async def system_stats():
@@ -189,14 +194,6 @@ async def update_preferences(user_id: str, preferences: dict):
         return {"message": "Preferences updated successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
-
-@app.get("/api/users/{user_id}/stats", tags=["Users"])
-async def get_user_statistics(user_id: str):
-    """Get user statistics and analytics"""
-    try:
-        return await get_user_analytics(user_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get user stats: {str(e)}")
 
 # ==================== MEDITATION RECOMMENDATION ENDPOINTS ====================
 
